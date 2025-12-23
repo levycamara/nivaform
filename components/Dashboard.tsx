@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { NivaLogo } from './Icons';
 import { Download, Users, Star, UserCheck, Trash2, ArrowLeft, Database, HardDrive, Eye, X } from 'lucide-react';
-import { Answers } from '../types';
 import { QUESTIONS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 
-interface Lead extends Answers {
+interface Lead {
+  id?: number; // Supabase ID
   timestamp: string;
+  [key: string]: string | string[] | number | undefined;
 }
 
 export default function Dashboard() {
@@ -21,13 +22,14 @@ export default function Dashboard() {
         try {
           const { data, error } = await supabase
             .from('leads')
-            .select('*')
+            .select('*') // This selects id, created_at, full_json, etc.
             .order('created_at', { ascending: false });
           
           if (!error && data) {
             setLeads(data.map((item: any) => ({
               ...item.full_json, // Unwrap JSON data containing all answers
-              timestamp: item.created_at
+              timestamp: item.created_at,
+              id: item.id // Capture ID for deletion
             })));
             setSource('cloud');
             return;
@@ -52,12 +54,53 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  const handleDelete = async (leadToDelete: Lead) => {
+    if (!confirm('Tem certeza que deseja excluir este lead permanentemente?')) return;
+
+    try {
+      if (source === 'cloud' && leadToDelete.id) {
+        // Delete from Supabase
+        const { error } = await supabase
+          .from('leads')
+          .delete()
+          .eq('id', leadToDelete.id);
+
+        if (error) {
+          throw error;
+        }
+      } else if (source === 'local') {
+        // Delete from Local Storage
+        const saved = localStorage.getItem('niva_responses');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Filter out the item based on timestamp (unique enough for local)
+          const updated = parsed.filter((l: any) => l.timestamp !== leadToDelete.timestamp);
+          localStorage.setItem('niva_responses', JSON.stringify(updated));
+        }
+      }
+
+      // Update UI state
+      setLeads(prev => prev.filter(l => l.timestamp !== leadToDelete.timestamp));
+      
+      // Close modal if open and it's the deleted lead
+      if (selectedLead && selectedLead.timestamp === leadToDelete.timestamp) {
+        setSelectedLead(null);
+      }
+
+    } catch (err) {
+      console.error("Erro ao excluir", err);
+      alert("Houve um erro ao tentar excluir o registro.");
+    }
+  };
+
   const downloadCSV = () => {
     if (leads.length === 0) return;
 
     const allKeys = new Set<string>();
     leads.forEach(lead => {
-      Object.keys(lead).forEach(key => allKeys.add(key));
+      Object.keys(lead).forEach(key => {
+        if (key !== 'id') allKeys.add(key); // Exclude ID from CSV if desired, or keep it
+      });
     });
 
     const priorityHeaders = ['name', 'whatsapp', 'email', 'niva_interest', 'timestamp'];
@@ -95,12 +138,12 @@ export default function Dashboard() {
   };
 
   const clearData = async () => {
-    if (confirm('Tem certeza? Esta ação depende da fonte dos dados.')) {
+    if (confirm('ATENÇÃO: Isso limpará TODOS os dados locais. Tem certeza?')) {
       if (source === 'local') {
         localStorage.removeItem('niva_responses');
         setLeads([]);
       } else {
-        alert('A limpeza de dados do banco de dados deve ser feita via painel do Supabase para segurança.');
+        alert('Para limpar o banco de dados completo, use o painel do Supabase.');
       }
     }
   };
@@ -110,19 +153,19 @@ export default function Dashboard() {
   const conversionRate = totalLeads > 0 ? Math.round((highIntent / totalLeads) * 100) : 0;
 
   // Helper to format answer
-  const formatAnswer = (val: string | string[] | undefined) => {
-    if (!val) return <span className="text-zinc-600 italic">Não respondido</span>;
+  const formatAnswer = (val: string | string[] | number | undefined) => {
+    if (val === undefined || val === null) return <span className="text-zinc-600 italic">Não respondido</span>;
     if (Array.isArray(val)) return val.join(', ').replace(/_/g, ' ');
-    return val.replace(/_/g, ' ');
+    return String(val).replace(/_/g, ' ');
   };
 
-  const getInterestColor = (interest: string | string[] | undefined) => {
+  const getInterestColor = (interest: string | string[] | number | undefined) => {
     if (interest === 'com_certeza') return 'bg-green-900/40 text-green-400 border-green-900';
     if (interest === 'provavelmente') return 'bg-blue-900/40 text-blue-400 border-blue-900';
     return 'bg-zinc-800 text-zinc-500 border-zinc-700';
   };
 
-  const getInterestLabel = (interest: string | string[] | undefined) => {
+  const getInterestLabel = (interest: string | string[] | number | undefined) => {
     if (typeof interest === 'string') return interest.replace(/_/g, ' ');
     return '-';
   };
@@ -207,7 +250,7 @@ export default function Dashboard() {
                  onClick={clearData}
                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-950/30 rounded-lg border border-zinc-800 hover:border-red-900 transition-colors"
                >
-                 <Trash2 className="w-4 h-4" /> Limpar
+                 <Trash2 className="w-4 h-4" /> Limpar Tudo
                </button>
              )}
              <button 
@@ -235,12 +278,20 @@ export default function Dashboard() {
                                     {new Date(lead.timestamp).toLocaleDateString('pt-BR')} às {new Date(lead.timestamp).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
                                 </p>
                             </div>
-                            <button 
-                              onClick={() => setSelectedLead(lead)}
-                              className="p-2.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-black active:bg-niva-highlight transition-all"
-                            >
-                                <Eye className="w-5 h-5" />
-                            </button>
+                            <div className="flex gap-2">
+                                <button 
+                                  onClick={() => setSelectedLead(lead)}
+                                  className="p-2.5 bg-zinc-800 rounded-lg text-zinc-400 active:text-black active:bg-niva-highlight transition-all"
+                                >
+                                    <Eye className="w-5 h-5" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDelete(lead)}
+                                  className="p-2.5 bg-zinc-800 rounded-lg text-red-400 active:text-white active:bg-red-600 transition-all border border-zinc-700/50"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="flex flex-wrap gap-2">
@@ -270,7 +321,7 @@ export default function Dashboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-900/50 text-zinc-400 text-sm uppercase tracking-wider">
-                  <th className="p-4 font-medium border-b border-zinc-800 w-16"></th>
+                  <th className="p-4 font-medium border-b border-zinc-800 w-24">Ações</th>
                   <th className="p-4 font-medium border-b border-zinc-800">Nome</th>
                   <th className="p-4 font-medium border-b border-zinc-800">WhatsApp</th>
                   <th className="p-4 font-medium border-b border-zinc-800">Email</th>
@@ -289,13 +340,22 @@ export default function Dashboard() {
                   leads.map((lead, i) => (
                     <tr key={i} className="hover:bg-white/5 transition-colors group">
                       <td className="p-4 text-center">
-                        <button 
-                          onClick={() => setSelectedLead(lead)}
-                          className="p-2 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-niva-highlight hover:text-black transition-all"
-                          title="Ver detalhes completos"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-2">
+                            <button 
+                              onClick={() => setSelectedLead(lead)}
+                              className="p-2 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-niva-highlight hover:text-black transition-all"
+                              title="Ver detalhes"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(lead)}
+                              className="p-2 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-red-600 transition-all"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
                       </td>
                       <td className="p-4 font-medium text-white">{lead.name || '-'}</td>
                       <td className="p-4">{lead.whatsapp || '-'}</td>
@@ -372,10 +432,16 @@ export default function Dashboard() {
               </div>
             </div>
             
-            <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 flex justify-end">
+            <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 flex justify-end gap-3">
+              <button 
+                onClick={() => handleDelete(selectedLead)}
+                className="px-6 py-3 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded-xl transition-colors text-base font-medium flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" /> Excluir
+              </button>
               <button 
                 onClick={() => setSelectedLead(null)}
-                className="w-full sm:w-auto px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors text-base font-medium"
+                className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors text-base font-medium"
               >
                 Fechar
               </button>
