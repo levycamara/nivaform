@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Niva | Premium Transport</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              niva: {
+                bg: '#09090b', // zinc-950
+                surface: '#18181b', // zinc-900
+                // Updated Brand Colors extracted from SVG
+                // Using the mid-tone orange as primary highlight for visibility
+                highlight: '#FB6900', 
+                highlightDim: 'rgba(251, 105, 0, 0.15)',
+                text: '#f4f4f5', // zinc-100
+                muted: '#a1a1aa', // zinc-400
+                // Full palette reference
+                brand: {
+                  red: '#A40000',
+                  redLight: '#C81D03',
+                  orangeRed: '#E62C00',
+                  orange: '#FB6900',
+                  orangeYellow: '#FC9301',
+                  yellow: '#FDC002',
+                }
+              }
+            },
+            animation: {
+              'fade-in-up': 'fadeInUp 0.4s ease-out forwards',
+              'fade-out-up': 'fadeOutUp 0.3s ease-in forwards',
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            },
+            keyframes: {
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(20px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              fadeOutUp: {
+                '0%': { opacity: '1', transform: 'translateY(0)' },
+                '100%': { opacity: '0', transform: 'translateY(-20px)' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #09090b;
+        color: #f4f4f5;
+        overflow: hidden; /* Prevent scrolling on body */
+        overscroll-behavior-y: none; /* Prevent rubber banding */
+        position: fixed; /* Fix body to prevent iOS scroll bounce */
+        width: 100%;
+        height: 100%;
+      }
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
