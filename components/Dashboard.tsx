@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NivaLogo } from './Icons';
-import { Download, Users, Star, UserCheck, Trash2, ArrowLeft, Database, HardDrive } from 'lucide-react';
+import { Download, Users, Star, UserCheck, Trash2, ArrowLeft, Database, HardDrive, Eye, X } from 'lucide-react';
 import { Answers } from '../types';
+import { QUESTIONS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 interface Lead extends Answers {
@@ -11,6 +12,7 @@ interface Lead extends Answers {
 export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [source, setSource] = useState<'local' | 'cloud'>('local');
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,7 +26,7 @@ export default function Dashboard() {
           
           if (!error && data) {
             setLeads(data.map((item: any) => ({
-              ...item.full_json, // Unwrap JSON data
+              ...item.full_json, // Unwrap JSON data containing all answers
               timestamp: item.created_at
             })));
             setSource('cloud');
@@ -53,18 +55,32 @@ export default function Dashboard() {
   const downloadCSV = () => {
     if (leads.length === 0) return;
 
-    const headers = ['Nome', 'WhatsApp', 'Email', 'Interesse', 'Data'];
+    const allKeys = new Set<string>();
+    leads.forEach(lead => {
+      Object.keys(lead).forEach(key => allKeys.add(key));
+    });
+
+    const priorityHeaders = ['name', 'whatsapp', 'email', 'niva_interest', 'timestamp'];
+    
+    const sortedHeaders = Array.from(allKeys).sort((a, b) => {
+      const indexA = priorityHeaders.indexOf(a);
+      const indexB = priorityHeaders.indexOf(b);
+      
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
     const csvContent = [
-      headers.join(','),
+      sortedHeaders.join(','),
       ...leads.map(lead => {
-        const row = [
-          lead.name || 'N/A',
-          lead.whatsapp || 'N/A',
-          lead.email || 'N/A',
-          lead.niva_interest || 'N/A',
-          new Date(lead.timestamp).toLocaleDateString('pt-BR')
-        ];
-        return row.join(',');
+        return sortedHeaders.map(header => {
+          const value = lead[header as keyof Lead];
+          if (value === undefined || value === null) return '""';
+          if (Array.isArray(value)) return `"${value.join('; ')}"`;
+          return `"${String(value).replace(/"/g, '""')}"`;
+        }).join(',');
       })
     ].join('\n');
 
@@ -93,8 +109,21 @@ export default function Dashboard() {
   const highIntent = leads.filter(l => l.niva_interest === 'com_certeza' || l.niva_interest === 'provavelmente').length;
   const conversionRate = totalLeads > 0 ? Math.round((highIntent / totalLeads) * 100) : 0;
 
+  // Helper to find question text by ID
+  const getQuestionTitle = (id: string) => {
+    const q = QUESTIONS.find(q => q.id === id);
+    return q ? q.title : id;
+  };
+
+  // Helper to format answer
+  const formatAnswer = (val: string | string[] | undefined) => {
+    if (!val) return <span className="text-zinc-600 italic">Não respondido</span>;
+    if (Array.isArray(val)) return val.join(', ').replace(/_/g, ' ');
+    return val.replace(/_/g, ' ');
+  };
+
   return (
-    <div className="min-h-screen bg-niva-bg text-niva-text font-sans selection:bg-niva-highlight selection:text-black">
+    <div className="min-h-screen bg-niva-bg text-niva-text font-sans selection:bg-niva-highlight selection:text-black relative">
       {/* Header */}
       <header className="border-b border-zinc-800 bg-niva-surface/50 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -175,17 +204,18 @@ export default function Dashboard() {
                onClick={downloadCSV}
                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-niva-highlight text-black rounded-lg hover:bg-white transition-colors shadow-[0_0_15px_rgba(251,105,0,0.3)]"
              >
-               <Download className="w-4 h-4" /> Exportar CSV
+               <Download className="w-4 h-4" /> Exportar Completo (CSV)
              </button>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-niva-surface border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="bg-niva-surface border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-900/50 text-zinc-400 text-sm uppercase tracking-wider">
+                  <th className="p-4 font-medium border-b border-zinc-800 w-10"></th>
                   <th className="p-4 font-medium border-b border-zinc-800">Nome</th>
                   <th className="p-4 font-medium border-b border-zinc-800">WhatsApp</th>
                   <th className="p-4 font-medium border-b border-zinc-800">Email</th>
@@ -196,13 +226,22 @@ export default function Dashboard() {
               <tbody className="divide-y divide-zinc-800 text-zinc-300">
                 {leads.length === 0 ? (
                    <tr>
-                     <td colSpan={5} className="p-8 text-center text-zinc-500">
+                     <td colSpan={6} className="p-8 text-center text-zinc-500">
                        Nenhum dado coletado ainda.
                      </td>
                    </tr>
                 ) : (
                   leads.map((lead, i) => (
-                    <tr key={i} className="hover:bg-white/5 transition-colors">
+                    <tr key={i} className="hover:bg-white/5 transition-colors group">
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={() => setSelectedLead(lead)}
+                          className="p-2 bg-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-niva-highlight hover:text-black transition-all"
+                          title="Ver detalhes completos"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </td>
                       <td className="p-4 font-medium text-white">{lead.name || '-'}</td>
                       <td className="p-4">{lead.whatsapp || '-'}</td>
                       <td className="p-4">{lead.email || '-'}</td>
@@ -229,6 +268,72 @@ export default function Dashboard() {
         </div>
 
       </main>
+
+      {/* Detail Modal */}
+      {selectedLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in-up" onClick={() => setSelectedLead(null)}>
+          <div 
+            className="bg-niva-surface border border-zinc-700 w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-zinc-800 bg-zinc-900/50">
+              <div>
+                <h3 className="text-2xl font-bold text-white">{selectedLead.name || 'Lead sem nome'}</h3>
+                <p className="text-zinc-400 text-sm">Enviado em {new Date(selectedLead.timestamp).toLocaleString('pt-BR')}</p>
+              </div>
+              <button 
+                onClick={() => setSelectedLead(null)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              {/* Profile Section */}
+              <div className="space-y-4">
+                <h4 className="text-niva-highlight text-sm font-bold uppercase tracking-wider mb-3">Dados de Contato</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                    <span className="text-zinc-500 text-xs block">Email</span>
+                    <span className="text-white">{selectedLead.email || '-'}</span>
+                  </div>
+                  <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                    <span className="text-zinc-500 text-xs block">WhatsApp</span>
+                    <span className="text-white">{selectedLead.whatsapp || '-'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Answers Mapping */}
+              <div className="space-y-4">
+                <h4 className="text-niva-highlight text-sm font-bold uppercase tracking-wider mb-3 mt-6">Respostas do Questionário</h4>
+                <div className="space-y-4">
+                  {QUESTIONS
+                    .filter(q => q.type !== 'WELCOME' && q.type !== 'END' && q.id !== 'name' && q.id !== 'email' && q.id !== 'whatsapp')
+                    .map((question) => (
+                      <div key={question.id} className="border-b border-zinc-800/50 pb-3 last:border-0">
+                        <p className="text-zinc-400 text-sm mb-1">{question.title}</p>
+                        <p className="text-white font-medium text-lg">
+                          {formatAnswer(selectedLead[question.id])}
+                        </p>
+                      </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-zinc-800 bg-zinc-900/50 flex justify-end">
+              <button 
+                onClick={() => setSelectedLead(null)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors text-sm font-medium"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
