@@ -30,3 +30,11 @@ export interface AnimationState {
   isExiting: boolean;
   direction: 'forward' | 'backward';
 }
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}

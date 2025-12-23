@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NivaLogo } from './Icons';
-import { Download, Users, Star, UserCheck, Trash2, ArrowLeft } from 'lucide-react';
+import { Download, Users, Star, UserCheck, Trash2, ArrowLeft, Database, HardDrive } from 'lucide-react';
 import { Answers } from '../types';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 interface Lead extends Answers {
   timestamp: string;
@@ -9,16 +10,44 @@ interface Lead extends Answers {
 
 export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [source, setSource] = useState<'local' | 'cloud'>('local');
 
   useEffect(() => {
-    const saved = localStorage.getItem('niva_responses');
-    if (saved) {
-      try {
-        setLeads(JSON.parse(saved).reverse()); // Newest first
-      } catch (e) {
-        console.error("Failed to parse leads", e);
+    const fetchData = async () => {
+      // 1. Try fetching from Supabase
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase
+            .from('leads')
+            .select('*')
+            .order('created_at', { ascending: false });
+          
+          if (!error && data) {
+            setLeads(data.map((item: any) => ({
+              ...item.full_json, // Unwrap JSON data
+              timestamp: item.created_at
+            })));
+            setSource('cloud');
+            return;
+          }
+        } catch (e) {
+          console.error("Supabase fetch failed", e);
+        }
       }
-    }
+
+      // 2. Fallback to Local Storage
+      const saved = localStorage.getItem('niva_responses');
+      if (saved) {
+        try {
+          setLeads(JSON.parse(saved).reverse());
+          setSource('local');
+        } catch (e) {
+          console.error("Failed to parse local leads", e);
+        }
+      }
+    };
+
+    fetchData();
   }, []);
 
   const downloadCSV = () => {
@@ -49,10 +78,14 @@ export default function Dashboard() {
     document.body.removeChild(link);
   };
 
-  const clearData = () => {
-    if (confirm('Tem certeza? Isso apagará todos os dados salvos neste dispositivo.')) {
-      localStorage.removeItem('niva_responses');
-      setLeads([]);
+  const clearData = async () => {
+    if (confirm('Tem certeza? Esta ação depende da fonte dos dados.')) {
+      if (source === 'local') {
+        localStorage.removeItem('niva_responses');
+        setLeads([]);
+      } else {
+        alert('A limpeza de dados do banco de dados deve ser feita via painel do Supabase para segurança.');
+      }
     }
   };
 
@@ -70,6 +103,10 @@ export default function Dashboard() {
              <span className="font-bold text-xl tracking-tight">Niva <span className="text-niva-muted font-normal text-sm ml-1">Dashboard</span></span>
           </div>
           <div className="flex items-center gap-4">
+            <div className={`flex items-center gap-2 text-xs px-2 py-1 rounded border ${source === 'cloud' ? 'border-green-800 text-green-500 bg-green-900/20' : 'border-zinc-700 text-zinc-500 bg-zinc-800'}`}>
+              {source === 'cloud' ? <Database className="w-3 h-3" /> : <HardDrive className="w-3 h-3" />}
+              {source === 'cloud' ? 'Supabase' : 'Local Storage'}
+            </div>
              <button 
                onClick={() => window.location.hash = ''} 
                className="text-sm text-zinc-400 hover:text-white flex items-center gap-1"
@@ -126,12 +163,14 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-2xl font-bold">Leads Recentes</h2>
           <div className="flex gap-3">
-             <button 
-               onClick={clearData}
-               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-950/30 rounded-lg border border-transparent hover:border-red-900 transition-colors"
-             >
-               <Trash2 className="w-4 h-4" /> Limpar Dados
-             </button>
+             {source === 'local' && (
+               <button 
+                 onClick={clearData}
+                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-950/30 rounded-lg border border-transparent hover:border-red-900 transition-colors"
+               >
+                 <Trash2 className="w-4 h-4" /> Limpar Dados Locais
+               </button>
+             )}
              <button 
                onClick={downloadCSV}
                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-niva-highlight text-black rounded-lg hover:bg-white transition-colors shadow-[0_0_15px_rgba(251,105,0,0.3)]"
@@ -173,7 +212,9 @@ export default function Dashboard() {
                             lead.niva_interest === 'provavelmente' ? 'bg-blue-900/40 text-blue-400' :
                             'bg-zinc-800 text-zinc-500'}
                         `}>
-                          {lead.niva_interest?.replace('_', ' ') || '-'}
+                          {typeof lead.niva_interest === 'string' 
+                            ? lead.niva_interest.replace('_', ' ') 
+                            : '-'}
                         </span>
                       </td>
                       <td className="p-4 text-zinc-500 text-sm">

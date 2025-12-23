@@ -8,6 +8,7 @@ import { NivaLogo } from './components/Icons';
 import Dashboard from './components/Dashboard';
 import { maskPhone, isValidEmail, isValidPhone } from './utils/mask';
 import { ChevronRight, ArrowRight, Check } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from './services/supabase';
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -48,20 +49,43 @@ export default function App() {
     }
   }, [currentStepIndex, currentQuestion, answers]);
 
-  // SAVE DATA ON COMPLETE
+  // SAVE DATA ON COMPLETE (Supabase + LocalStorage Backup)
   useEffect(() => {
     if (currentQuestion.type === QuestionType.END) {
-       try {
-         const existing = JSON.parse(localStorage.getItem('niva_responses') || '[]');
-         const newEntry = {
-           ...answers,
-           timestamp: new Date().toISOString()
-         };
-         existing.push(newEntry);
-         localStorage.setItem('niva_responses', JSON.stringify(existing));
-       } catch (e) {
-         console.error("Error saving response", e);
-       }
+       const saveData = async () => {
+         const timestamp = new Date().toISOString();
+         const finalData = { ...answers, timestamp };
+
+         // 1. Always save to LocalStorage (Backup/Offline)
+         try {
+           const existing = JSON.parse(localStorage.getItem('niva_responses') || '[]');
+           existing.push(finalData);
+           localStorage.setItem('niva_responses', JSON.stringify(existing));
+         } catch (e) {
+           console.error("Error saving to localStorage", e);
+         }
+
+         // 2. Save to Supabase (if configured)
+         if (isSupabaseConfigured()) {
+           try {
+             const { error } = await supabase.from('leads').insert([
+               {
+                 name: answers.name,
+                 email: answers.email,
+                 whatsapp: answers.whatsapp,
+                 niva_interest: answers.niva_interest,
+                 full_json: answers, // Save full raw data
+                 created_at: timestamp
+               }
+             ]);
+             if (error) console.error("Supabase Error:", error);
+           } catch (err) {
+             console.error("Failed to connect to Supabase", err);
+           }
+         }
+       };
+
+       saveData();
     }
   }, [currentQuestion.type, answers]);
 
